@@ -1,8 +1,15 @@
 package main
 
-import "testing"
-import "sort"
-import "reflect"
+import (
+	"crypto/tls"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"sort"
+	"strings"
+	"testing"
+)
 
 func TestGetValidationDomains(t *testing.T) {
 	cases := []struct {
@@ -43,5 +50,26 @@ func TestGetValidationDomains(t *testing.T) {
 		if !reflect.DeepEqual(o, c.output) {
 			t.Errorf("want %v, got %v", c.output, o)
 		}
+	}
+}
+
+func TestGetSerialNumber(t *testing.T) {
+	myClient.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Hello, client")
+	}))
+	defer ts.Close()
+
+	serial, err := GetSerialNumber(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "30:83:02:84:c2:c6:ad:1f:90:be:64:2f:a7:00:14:eb"
+	if !strings.EqualFold(serial, want) {
+		t.Errorf("want %s, got %s", want, serial)
 	}
 }

@@ -98,6 +98,7 @@ var myClient = &http.Client{
 	},
 }
 
+// GetSerialNumber gets the serial number of tls certification.
 func GetSerialNumber(u string) (string, error) {
 	resp, err := myClient.Get(u)
 	if err != nil {
