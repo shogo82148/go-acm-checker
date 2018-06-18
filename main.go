@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -64,8 +66,49 @@ func ValidateCertificate(ctx context.Context, myacm *acm.ACM, arn string) (bool,
 	if err != nil {
 		return false, err
 	}
-	cert := output.Certificate
+
 	allok := true
+	cert := output.Certificate
+	if opts := cert.DomainValidationOptions; opts != nil {
+		for _, opt := range opts {
+			if opt.ValidationMethod == nil {
+				return false, errors.New("validation method is missing")
+			}
+			switch *opt.ValidationMethod {
+			case "DNS":
+				record := opt.ResourceRecord
+				v, err := lookup(ctx, *record.Type, *record.Name)
+				if err != nil {
+					allok = false
+					log.Printf("failed to validate %s: %s", *opt.DomainName, err)
+				}
+				if v != *record.Value {
+					allok = false
+					log.Printf("failed to validate %s", *opt.DomainName)
+				}
+
+			case "EMAIL":
+				domains := GetValidationDomains(*opt.DomainName)
+				ok := false
+				for _, d := range domains {
+					serial, err := GetSerialNumber(fmt.Sprintf("https://%s/", d))
+					if err != nil {
+						continue
+					}
+					if cert.Serial != nil && serial == *cert.Serial {
+						ok = true
+						break
+					}
+				}
+				if !ok {
+					allok = false
+					log.Printf("failed to validate %s", *opt.DomainName)
+				}
+			}
+		}
+		return allok, nil
+	}
+
 	for _, name := range cert.SubjectAlternativeNames {
 		domains := GetValidationDomains(*name)
 		ok := false
@@ -85,6 +128,48 @@ func ValidateCertificate(ctx context.Context, myacm *acm.ACM, arn string) (bool,
 		}
 	}
 	return allok, nil
+}
+
+// Use Google Public DNS over HTTPS
+func lookup(ctx context.Context, typ, name string) (string, error) {
+	type answer struct {
+		Question []*struct {
+			Name string `json:"name"`
+			Type int    `json:"type"`
+		} `json:"Question"`
+		Answer []*struct {
+			Name string `json:"name"`
+			Type int    `json:"type"`
+			Data string `json:"data"`
+		}
+	}
+
+	q := url.Values{}
+	q.Set("type", typ)
+	q.Set("name", name)
+	u := &url.URL{
+		Scheme:   "https",
+		Host:     "dns.google.com",
+		Path:     "/resolve",
+		RawQuery: q.Encode(),
+	}
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	req = req.WithContext(ctx)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var ans answer
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(&ans); err != nil {
+		return "", err
+	}
+	return ans.Answer[0].Data, nil
 }
 
 // GetValidationDomains returns the domains that the checker validates.
