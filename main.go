@@ -81,6 +81,7 @@ func main() {
 	}
 }
 
+// GetValidationDomains returns the domains that the checker validates.
 func GetValidationDomains(s string) []string {
 	switch {
 	case strings.HasPrefix(s, "www."):
