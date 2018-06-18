@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/acm"
+	"github.com/aws/aws-sdk-go/service/acm/acmiface"
 )
 
 func main() {
@@ -58,7 +59,7 @@ func main() {
 }
 
 // ValidateCertificate validates the certificate.
-func ValidateCertificate(ctx context.Context, myacm *acm.ACM, arn string) (bool, error) {
+func ValidateCertificate(ctx context.Context, myacm acmiface.ACMAPI, arn string) (bool, error) {
 	input := &acm.DescribeCertificateInput{
 		CertificateArn: aws.String(arn),
 	}
@@ -75,7 +76,7 @@ func ValidateCertificate(ctx context.Context, myacm *acm.ACM, arn string) (bool,
 				return false, errors.New("validation method is missing")
 			}
 			switch *opt.ValidationMethod {
-			case "DNS":
+			case acm.ValidationMethodDns:
 				record := opt.ResourceRecord
 				v, err := lookup(ctx, *record.Type, *record.Name)
 				if err != nil {
@@ -87,7 +88,7 @@ func ValidateCertificate(ctx context.Context, myacm *acm.ACM, arn string) (bool,
 					log.Printf("failed to validate %s", *opt.DomainName)
 				}
 
-			case "EMAIL":
+			case acm.ValidationMethodEmail:
 				domains := GetValidationDomains(*opt.DomainName)
 				ok := false
 				for _, d := range domains {
