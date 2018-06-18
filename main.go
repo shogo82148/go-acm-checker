@@ -74,7 +74,7 @@ func ValidateCertificate(ctx context.Context, myacm *acm.ACM, arn string) (bool,
 			if err != nil {
 				continue
 			}
-			if serial == *cert.Serial {
+			if cert.Serial != nil && serial == *cert.Serial {
 				ok = true
 				break
 			}
