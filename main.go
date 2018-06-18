@@ -39,35 +39,9 @@ func main() {
 		input := &acm.ListCertificatesInput{}
 		err := myacm.ListCertificatesPagesWithContext(ctx, input, func(page *acm.ListCertificatesOutput, lastPage bool) bool {
 			for _, cert := range page.CertificateSummaryList {
-				input := &acm.DescribeCertificateInput{
-					CertificateArn: cert.CertificateArn,
-				}
-				output, err := myacm.DescribeCertificateWithContext(ctx, input)
-				if err != nil {
+				if ok, err := ValidateCertificate(ctx, myacm, *cert.CertificateArn); err != nil {
 					log.Println("failed to describe certificate", err, *cert.CertificateArn)
-					return true
-				}
-				cert := output.Certificate
-				allok := true
-				for _, name := range cert.SubjectAlternativeNames {
-					domains := GetValidationDomains(*name)
-					ok := false
-					for _, d := range domains {
-						serial, err := GetSerialNumber(fmt.Sprintf("https://%s/", d))
-						if err != nil {
-							continue
-						}
-						if serial == *cert.Serial {
-							ok = true
-							break
-						}
-					}
-					if !ok {
-						allok = false
-						log.Printf("failed to validate %s", *name)
-					}
-				}
-				if allok {
+				} else if ok {
 					log.Printf("success to validate %s(%s)", *cert.DomainName, *cert.CertificateArn)
 				} else {
 					log.Printf("failed to validate %s(%s)", *cert.DomainName, *cert.CertificateArn)
@@ -79,6 +53,38 @@ func main() {
 			log.Println("failed to list certificates", err)
 		}
 	}
+}
+
+// ValidateCertificate validates the certificate.
+func ValidateCertificate(ctx context.Context, myacm *acm.ACM, arn string) (bool, error) {
+	input := &acm.DescribeCertificateInput{
+		CertificateArn: aws.String(arn),
+	}
+	output, err := myacm.DescribeCertificateWithContext(ctx, input)
+	if err != nil {
+		return false, err
+	}
+	cert := output.Certificate
+	allok := true
+	for _, name := range cert.SubjectAlternativeNames {
+		domains := GetValidationDomains(*name)
+		ok := false
+		for _, d := range domains {
+			serial, err := GetSerialNumber(fmt.Sprintf("https://%s/", d))
+			if err != nil {
+				continue
+			}
+			if serial == *cert.Serial {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			allok = false
+			log.Printf("failed to validate %s", *name)
+		}
+	}
+	return allok, nil
 }
 
 // GetValidationDomains returns the domains that the checker validates.
